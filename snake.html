@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스네이크 게임</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Jua', sans-serif;
+            overscroll-behavior: none; /* iOS/Safari에서 스와이프 시 페이지 이동 방지 */
+        }
+        .game-container {
+            touch-action: none; /* 터치 이벤트가 상위로 전파되지 않도록 설정 */
+        }
+        #gameCanvas {
+            background-color: #2d3748; /* 어두운 회색 배경 */
+            border: 2px solid #4a5568; /* 약간 밝은 회색 테두리 */
+            box-shadow: 0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23);
+        }
+        .btn {
+            transition: all 0.3s ease;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .btn:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        /* 모달 스타일 */
+        .modal {
+            display: none; /* 기본적으로 숨김 */
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.6);
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 400px;
+            text-align: center;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .touch-controls button {
+            width: 60px;
+            height: 60px;
+            font-size: 24px;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="game-container w-full max-w-md md:max-w-lg lg:max-w-xl">
+        <h1 class="text-4xl font-bold mb-6 text-center text-emerald-400">스네이크 게임</h1>
+
+        <div class="flex justify-between items-center mb-4 px-2">
+            <div class="text-2xl">점수: <span id="score" class="text-yellow-400">0</span></div>
+            <div class="text-2xl">최고 점수: <span id="highScore" class="text-orange-400">0</span></div>
+        </div>
+
+        <canvas id="gameCanvas" class="rounded-lg"></canvas>
+
+        <div class="mt-6 flex justify-center space-x-4">
+            <button id="startButton" class="btn bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 px-6 rounded-lg text-lg shadow-md">
+                게임 시작
+            </button>
+            <button id="resetButton" class="btn bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-lg text-lg shadow-md hidden">
+                다시 시작
+            </button>
+        </div>
+
+        <div id="touchControls" class="mt-6 grid grid-cols-3 gap-2 justify-items-center max-w-xs mx-auto md:hidden">
+            <div></div> <button id="touchUp" class="btn touch-controls bg-gray-700 hover:bg-gray-600 rounded-lg">▲</button>
+            <div></div> <button id="touchLeft" class="btn touch-controls bg-gray-700 hover:bg-gray-600 rounded-lg">◀</button>
+            <button id="touchDown" class="btn touch-controls bg-gray-700 hover:bg-gray-600 rounded-lg">▼</button>
+            <button id="touchRight" class="btn touch-controls bg-gray-700 hover:bg-gray-600 rounded-lg">▶</button>
+        </div>
+    </div>
+
+    <div id="gameOverModal" class="modal">
+        <div class="modal-content bg-gray-800 p-8 rounded-xl shadow-2xl">
+            <h2 class="text-3xl font-bold mb-4 text-red-500">게임 오버!</h2>
+            <p class="text-xl mb-2">최종 점수: <span id="finalScore" class="text-yellow-400">0</span></p>
+            <p class="text-lg mb-6">새로운 최고 점수: <span id="newHighScore" class="text-orange-400"></span></p>
+            <button id="restartGameButton" class="btn bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 px-8 rounded-lg text-lg">
+                다시 시작
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score');
+        const highScoreDisplay = document.getElementById('highScore');
+        const startButton = document.getElementById('startButton');
+        const resetButton = document.getElementById('resetButton'); // 게임 진행 중 다시 시작 버튼
+        const gameOverModal = document.getElementById('gameOverModal');
+        const finalScoreDisplay = document.getElementById('finalScore');
+        const newHighScoreDisplay = document.getElementById('newHighScore');
+        const restartGameButton = document.getElementById('restartGameButton'); // 모달 안의 다시 시작 버튼
+
+        const touchControls = document.getElementById('touchControls');
+        const touchUp = document.getElementById('touchUp');
+        const touchLeft = document.getElementById('touchLeft');
+        const touchDown = document.getElementById('touchDown');
+        const touchRight = document.getElementById('touchRight');
+
+        const scale = 20; // 게임 블록 크기
+        let rows, columns; // 캔버스 크기에 따른 격자 수
+
+        let snake;
+        let food;
+        let score;
+        let highScore = localStorage.getItem('snakeHighScore') || 0;
+        let gameInterval;
+        let currentDirection;
+        let nextDirection; // 다음 프레임에 적용될 방향
+        let gameSpeed = 150; // 밀리초 단위, 낮을수록 빠름
+        let gameActive = false;
+
+        // 캔버스 크기 설정 및 반응형 처리
+        function setupCanvas() {
+            const container = document.querySelector('.game-container');
+            const containerWidth = container.clientWidth - 20; // 좌우 패딩 고려
+            
+            // scale의 배수로 캔버스 너비 설정 (최대 600px)
+            canvas.width = Math.min(Math.floor(containerWidth / scale) * scale, 600);
+            canvas.height = Math.min(Math.floor(containerWidth / scale) * scale * 0.8, 480); // 높이는 너비의 80% 정도로 설정
+
+            rows = canvas.height / scale;
+            columns = canvas.width / scale;
+
+            // 터치 컨트롤러 표시 여부 (모바일 화면에서만)
+            if (window.innerWidth < 768) {
+                touchControls.classList.remove('md:hidden');
+            } else {
+                touchControls.classList.add('md:hidden');
+            }
+        }
+
+
+        // 스네이크 객체
+        function Snake() {
+            this.x = Math.floor(columns / 2) * scale;
+            this.y = Math.floor(rows / 2) * scale;
+            this.xSpeed = scale * 1;
+            this.ySpeed = 0;
+            this.total = 0;
+            this.tail = [];
+
+            this.draw = function() {
+                ctx.fillStyle = "#48BB78"; // 스네이크 색상 (녹색 계열)
+
+                for (let i = 0; i < this.tail.length; i++) {
+                    ctx.fillRect(this.tail[i].x, this.tail[i].y, scale - 1, scale - 1); // 테두리 효과를 위해 1px 작게
+                }
+                ctx.fillRect(this.x, this.y, scale - 1, scale - 1);
+            }
+
+            this.update = function() {
+                // 꼬리 이동
+                for (let i = 0; i < this.tail.length - 1; i++) {
+                    this.tail[i] = this.tail[i + 1];
+                }
+                if (this.total > 0) {
+                    this.tail[this.total - 1] = { x: this.x, y: this.y };
+                }
+
+                // 머리 이동
+                this.x += this.xSpeed;
+                this.y += this.ySpeed;
+
+                // 벽 충돌 확인
+                if (this.x >= canvas.width || this.x < 0 || this.y >= canvas.height || this.y < 0) {
+                    gameOver();
+                }
+
+                // 자기 자신과 충돌 확인
+                for (let i = 0; i < this.tail.length; i++) {
+                    if (this.x === this.tail[i].x && this.y === this.tail[i].y) {
+                        gameOver();
+                        break;
+                    }
+                }
+            }
+
+            this.changeDirection = function(direction) {
+                switch (direction) {
+                    case 'Up':
+                        if (currentDirection !== 'Down') {
+                            this.xSpeed = 0;
+                            this.ySpeed = -scale * 1;
+                            currentDirection = 'Up';
+                        }
+                        break;
+                    case 'Down':
+                        if (currentDirection !== 'Up') {
+                            this.xSpeed = 0;
+                            this.ySpeed = scale * 1;
+                            currentDirection = 'Down';
+                        }
+                        break;
+                    case 'Left':
+                        if (currentDirection !== 'Right') {
+                            this.xSpeed = -scale * 1;
+                            this.ySpeed = 0;
+                            currentDirection = 'Left';
+                        }
+                        break;
+                    case 'Right':
+                        if (currentDirection !== 'Left') {
+                            this.xSpeed = scale * 1;
+                            this.ySpeed = 0;
+                            currentDirection = 'Right';
+                        }
+                        break;
+                }
+            }
+
+            this.eat = function(food) {
+                if (this.x === food.x && this.y === food.y) {
+                    this.total++;
+                    score++;
+                    scoreDisplay.textContent = score;
+                    // 점수 증가에 따라 속도 증가 (선택적)
+                    if (score % 5 === 0 && gameSpeed > 50) {
+                        gameSpeed -= 10;
+                        clearInterval(gameInterval);
+                        gameInterval = setInterval(gameLoop, gameSpeed);
+                    }
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        // 먹이 객체
+        function Food() {
+            this.pickLocation = function() {
+                let validLocation = false;
+                while (!validLocation) {
+                    this.x = Math.floor(Math.random() * columns) * scale;
+                    this.y = Math.floor(Math.random() * rows) * scale;
+                    validLocation = true;
+                    // 먹이가 뱀 몸통 위에 생성되지 않도록 확인
+                    if (snake) { // snake가 초기화된 후에만 확인
+                        if (snake.x === this.x && snake.y === this.y) {
+                            validLocation = false;
+                            continue;
+                        }
+                        for (let i = 0; i < snake.tail.length; i++) {
+                            if (snake.tail[i].x === this.x && snake.tail[i].y === this.y) {
+                                validLocation = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            this.draw = function() {
+                ctx.fillStyle = "#F56565"; // 먹이 색상 (빨간색 계열)
+                ctx.fillRect(this.x, this.y, scale - 1, scale - 1);
+            }
+        }
+
+        // 게임 초기화
+        function initGame() {
+            setupCanvas(); // 캔버스 크기 먼저 설정
+            snake = new Snake();
+            food = new Food();
+            food.pickLocation(); // snake 객체가 생성된 후 호출
+            score = 0;
+            scoreDisplay.textContent = score;
+            highScoreDisplay.textContent = highScore;
+            currentDirection = 'Right'; // 초기 방향
+            nextDirection = 'Right'; // 다음 방향 초기화
+            gameSpeed = 150; // 초기 게임 속도
+            gameActive = true;
+
+            startButton.classList.add('hidden');
+            resetButton.classList.remove('hidden');
+            gameOverModal.style.display = 'none';
+
+            if (gameInterval) clearInterval(gameInterval);
+            gameInterval = setInterval(gameLoop, gameSpeed);
+        }
+
+        // 게임 루프
+        function gameLoop() {
+            if (!gameActive) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // 캔버스 클리어
+
+            // 다음 방향 적용
+            if (nextDirection) {
+                snake.changeDirection(nextDirection);
+                // nextDirection = null; // 한 번만 적용되도록 하거나, 연속 입력을 위해 유지할 수 있음
+            }
+            
+            snake.update();
+            snake.draw();
+            food.draw();
+
+            if (snake.eat(food)) {
+                food.pickLocation();
+            }
+        }
+
+        // 게임 오버 처리
+        function gameOver() {
+            gameActive = false;
+            clearInterval(gameInterval);
+            finalScoreDisplay.textContent = score;
+            
+            let newHighScoreAchieved = false;
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('snakeHighScore', highScore);
+                highScoreDisplay.textContent = highScore;
+                newHighScoreDisplay.textContent = highScore + " 🎉";
+                newHighScoreAchieved = true;
+            } else {
+                newHighScoreDisplay.textContent = highScore;
+            }
+            
+            newHighScoreDisplay.parentElement.classList.toggle('text-green-400', newHighScoreAchieved);
+            newHighScoreDisplay.parentElement.classList.toggle('text-orange-400', !newHighScoreAchieved);
+
+
+            gameOverModal.style.display = 'flex';
+            resetButton.classList.add('hidden'); // 게임 오버 시 '다시 시작' 버튼 숨김 (모달에 있으므로)
+        }
+
+        // 키보드 입력 처리
+        window.addEventListener('keydown', (e) => {
+            if (!gameActive && e.key !== 'Enter' && e.key !== ' ') return; // 게임 비활성 시 Enter/Space만 허용 (시작용)
+            if (gameActive) { // 게임 활성화 시에만 방향키 입력 처리
+                const direction = e.key.replace('Arrow', '');
+                // 바로 반대 방향으로 가지 못하게 하는 로직은 changeDirection 내부에 있음
+                // 한 프레임에 여러 입력이 들어와 꼬이는 것을 방지하기 위해 nextDirection 사용
+                if (['Up', 'Down', 'Left', 'Right'].includes(direction)) {
+                     // 즉시 방향 변경하지 않고 다음 틱에 반영될 방향 저장
+                    if (direction === 'Up' && currentDirection !== 'Down') nextDirection = 'Up';
+                    else if (direction === 'Down' && currentDirection !== 'Up') nextDirection = 'Down';
+                    else if (direction === 'Left' && currentDirection !== 'Right') nextDirection = 'Left';
+                    else if (direction === 'Right' && currentDirection !== 'Left') nextDirection = 'Right';
+                }
+            } else if ((e.key === 'Enter' || e.key === ' ') && !gameOverModal.style.display || gameOverModal.style.display === 'none') {
+                 // 게임 시작 전 Enter/Space로 시작 (모달이 안 떠있을 때)
+                if (!gameActive) {
+                    initGame();
+                }
+            }
+        });
+
+        // 터치 입력 처리
+        touchUp.addEventListener('click', () => { if (gameActive && currentDirection !== 'Down') nextDirection = 'Up'; });
+        touchDown.addEventListener('click', () => { if (gameActive && currentDirection !== 'Up') nextDirection = 'Down'; });
+        touchLeft.addEventListener('click', () => { if (gameActive && currentDirection !== 'Right') nextDirection = 'Left'; });
+        touchRight.addEventListener('click', () => { if (gameActive && currentDirection !== 'Left') nextDirection = 'Right'; });
+
+
+        // 버튼 이벤트 리스너
+        startButton.addEventListener('click', initGame);
+        resetButton.addEventListener('click', () => { // 게임 중 '다시 시작'
+            if (gameActive) { // 게임이 활성화된 상태에서만 작동
+                 gameOver(); // 현재 게임을 종료 처리 (점수 기록 등)
+                 // 모달이 뜨므로, 모달의 '다시 시작' 버튼을 통해 initGame()이 호출됨
+                 // 만약 모달 없이 즉시 재시작을 원한다면 아래 주석 해제
+                 // initGame(); 
+            } else { // 게임이 비활성 상태(예: 초기 화면)이면 바로 시작
+                initGame();
+            }
+        });
+        restartGameButton.addEventListener('click', () => { // 모달의 '다시 시작'
+            gameOverModal.style.display = 'none';
+            initGame();
+        });
+        
+        // 창 크기 변경 시 캔버스 재설정 (게임이 활성화되지 않았을 때만)
+        window.addEventListener('resize', () => {
+            if (!gameActive) {
+                setupCanvas();
+                // 초기 안내 메시지나 정적 화면 다시 그리기 (필요하다면)
+                drawInitialScreen();
+            }
+        });
+
+        // 초기 화면 그리기 (게임 시작 전)
+        function drawInitialScreen() {
+            setupCanvas(); // 캔버스 크기 설정
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "#4A5568"; // 어두운 회색 배경
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "white";
+            ctx.font = `${scale*1.2}px 'Jua'`;
+            ctx.textAlign = "center";
+            ctx.fillText("스네이크 게임", canvas.width / 2, canvas.height / 2 - scale * 2);
+            ctx.font = `${scale*0.8}px 'Jua'`;
+            ctx.fillText("시작 버튼 또는 Enter를 누르세요", canvas.width / 2, canvas.height / 2 + scale);
+            ctx.fillText("(방향키 또는 터치로 조작)", canvas.width / 2, canvas.height / 2 + scale * 2.5);
+        }
+
+        // 초기화
+        highScoreDisplay.textContent = highScore;
+        drawInitialScreen(); // 페이지 로드 시 초기 화면 표시
+
+    </script>
+</body>
+</html>
